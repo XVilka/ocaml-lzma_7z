@@ -1,0 +1,11 @@
+_build/
+*.o
+*.a
+*.so
+.*.swp
+.*.swo
+*.un~
+*.merlin
+*.install
+*.mllib
+*.mldylib
