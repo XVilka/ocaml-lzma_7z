@@ -511,12 +511,16 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
                     Lwt_io.printf "LZMA_DEC: uncompressed 0x%x bytes -> 0x%x bytes\n"
                         inprocessed outprocessed;
                     (* Save the outstream *)
-                    let realout = CArray.sub outbuf 0 outprocessed in
-                    let outstr = carray_to_string realout in
-                    Buffer.add_substring outdata outstr outpos outprocessed;
-                    (* Continue unpacking *)
-                    walk nextinpos insize'' nextoutpos indata;
-                    Ok (Buffer.contents outdata)
+                    if outprocessed > 0 then begin
+                        let realout = CArray.sub outbuf 0 outprocessed in
+                        let outstr = carray_to_string realout in
+                        Buffer.add_substring outdata outstr outpos outprocessed;
+                        (* Continue unpacking *)
+                        match (walk nextinpos insize'' nextoutpos indata) with
+                        | Ok somedata -> Ok somedata
+                        | Error e -> Error e
+                    end else
+                        Ok (Buffer.contents outdata)
                 )
                 | Some SZ_ERROR_DATA ->
                     (* Here we still can have some output *)
