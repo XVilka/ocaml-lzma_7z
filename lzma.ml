@@ -339,6 +339,12 @@ let lzmadec_galloc =
     foreign_value "g_Alloc" iszalloc
 
 (* -------------------------------------------------------------------------------- *)
+
+type lzma_result = {
+    data: string;
+    consumed: int;
+}
+
 let alloc_clzmadec () =
     let clzmadecp = allocate_n clzma_dec ~count:1 in
     if not (is_null clzmadecp) then Some clzmadecp
@@ -419,9 +425,9 @@ let lzma_read_data (ba:data) legacy =
         Bigarray.Array1.sub ba sizeof_lzma_header
             (ba_size - sizeof_lzma_header)
 
-
 (* TODO: Add also bytes and string functions *)
 (* It is utter crap, refactor this! *)
+(* Returns the lzma_result - buffer and bytes consumed *)
 let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
     let ba_size = Bigarray.Array1.dim ba in
     (* Prepare the header first *)
@@ -448,7 +454,7 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
         in
         Lwt_io.printf "first block size %d\n" (Bigarray.Array1.dim firstblock);
         (* Stupid copy of LzmaUtil.c Decode2 *)
-        let rec walk inpos insize outpos block =
+        let rec walk inpos insize outpos block consumed =
             Lwt_io.printf "inpos = 0x%x insize = 0x%x datasize = 0x%x outpos = 0x%x\n"
                 inpos insize data_size outpos;
             if inpos < (data_size - 8) then begin
@@ -512,26 +518,35 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
                         inprocessed outprocessed;
                     (* Save the outstream *)
                     if outprocessed > 0 then begin
+                        let consumed' = consumed + inprocessed in
                         let realout = CArray.sub outbuf 0 outprocessed in
                         let outstr = carray_to_string realout in
                         Buffer.add_substring outdata outstr outpos outprocessed;
                         (* Continue unpacking *)
-                        match (walk nextinpos insize'' nextoutpos indata) with
-                        | Ok somedata -> Ok somedata
+                        match (walk nextinpos insize''
+                            nextoutpos indata consumed') with
+                        | Ok someresult -> Ok someresult
                         | Error e -> Error e
                     end else
-                        Ok (Buffer.contents outdata)
+                        Ok ({
+                                data = Buffer.contents outdata;
+                                consumed = consumed;
+                        })
                 )
                 | Some SZ_ERROR_DATA ->
                     (* Here we still can have some output *)
                         Lwt_io.printf "LZMA_DEC [corrupted]: uncompressed 0x%x bytes -> 0x%x bytes\n"
                             inprocessed outprocessed;
                     (* Save the outstream *)
+                    let consumed' = consumed + inprocessed in
                     let realout = CArray.sub outbuf 0 outprocessed in
                     let outstr = carray_to_string realout in
                     Buffer.add_substring outdata outstr outpos outprocessed;
                     (* Now return from the loop *)
-                    Ok (Buffer.contents outdata)
+                    Ok ({
+                            data = Buffer.contents outdata;
+                            consumed = consumed';
+                        })
                 | Some SZ_ERROR_MEM ->
                     Or_error.error_string "Decompression: memory error"
                 | Some SZ_ERROR_CRC ->
@@ -563,8 +578,11 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
 
             end else
                 (* Unpacked data? *)
-                Ok (Buffer.contents outdata)
+                Ok ({
+                    data = Buffer.contents outdata;
+                    consumed = consumed;
+                })
         in
-        walk 0 in_buf_size 0 firstblock
+        walk 0 in_buf_size 0 firstblock 0
     | _ -> Or_error.error_string "Decompression: cannot initialize LZMA state"
 

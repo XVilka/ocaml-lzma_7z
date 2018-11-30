@@ -11,11 +11,16 @@
 (ignored_subdirs (7zip))
 (rule
   (deps (source_tree 7zip))
-  (targets liblzma_7z_stubs.a dlllzma_7z_stubs.so)
+  (targets liblzma_7z.a liblzma_7z.so)
   (action (progn
 	  (chdir 7zip (run make clean))
 	  (chdir 7zip (run make liblzma_7z.a))
 	  (chdir 7zip (run make liblzma_7z.so))
+  )))
+(rule
+  (deps (source_tree 7zip))
+  (targets liblzma_7z_stubs.a dlllzma_7z_stubs.so)
+  (action (progn
 	  (copy 7zip/liblzma_7z.a liblzma_7z_stubs.a)
 	  (copy 7zip/liblzma_7z.so dlllzma_7z_stubs.so)
 	  (chdir 7zip (run make clean))
