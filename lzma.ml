@@ -168,7 +168,7 @@ let carray_to_string a =
         Bytes.set bytes i (char_of_int
             (Unsigned.UInt8.to_int (CArray.unsafe_get a i)))
     done;
-    Bytes.unsafe_to_string bytes
+    Bytes.unsafe_to_string ~no_mutation_while_string_reachable:bytes
 
 (* -------------------------------------------------------------------------------- *)
 type data = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
@@ -378,11 +378,11 @@ let lzma_parse_headers header =
     }
 
 let dump_headers headers =
-    Lwt_io.printf "headers {\n";
-    Lwt_io.printf "  properties = 0x%x\n" headers.properties;
-    Lwt_io.printf "  dict_size = 0x%lx\n" headers.dict_size;
-    Lwt_io.printf "  outlen = 0x%Lx\n" headers.outlen;
-    Lwt_io.printf "}\n"
+    Lwt_io.printf "headers {\n" |> ignore;
+    Lwt_io.printf "  properties = 0x%x\n" headers.properties |> ignore;
+    Lwt_io.printf "  dict_size = 0x%lx\n" headers.dict_size |> ignore;
+    Lwt_io.printf "  outlen = 0x%Lx\n" headers.outlen |> ignore;
+    Lwt_io.printf "}\n" |> ignore
 
 (* Fix up the headers if legacy format is met *)
 (* All modern implementations store size as 8 byte integer (uint64)
@@ -428,8 +428,7 @@ let lzma_read_data (ba:data) legacy =
 (* TODO: Add also bytes and string functions *)
 (* It is utter crap, refactor this! *)
 (* Returns the lzma_result - buffer and bytes consumed *)
-let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
-    let ba_size = Bigarray.Array1.dim ba in
+let lzma_decompress_auto_ba ?legacy:(legacy=false) (ba:data) =
     (* Prepare the header first *)
     let header = lzma_read_headers ba legacy in
     let headers = lzma_parse_headers header in
@@ -444,19 +443,18 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
         (* Loop over the buf, extract block by block *)
         let outbuf = CArray.make uint8_t out_buf_size in
         let outbufptr = CArray.start outbuf in
-        let outbufsz = Unsigned.Size_t.of_int out_buf_size in
         let outdata = Buffer.create 16 in
-        Lwt_io.printf "first block [%d|%d]\n" in_buf_size data_size;
+        Lwt_io.printf "first block [%d|%d]\n" in_buf_size data_size |> ignore;
         let firstblock =
             if data_size >= in_buf_size
             then Bigarray.Array1.sub data 0 in_buf_size
             else Bigarray.Array1.sub data 0 data_size
         in
-        Lwt_io.printf "first block size %d\n" (Bigarray.Array1.dim firstblock);
+        Lwt_io.printf "first block size %d\n" (Bigarray.Array1.dim firstblock) |> ignore;
         (* Stupid copy of LzmaUtil.c Decode2 *)
         let rec walk inpos insize outpos block consumed =
             Lwt_io.printf "inpos = 0x%x insize = 0x%x datasize = 0x%x outpos = 0x%x\n"
-                inpos insize data_size outpos;
+                inpos insize data_size outpos |> ignore;
             if inpos < (data_size - 8) then begin
                 (* Read next block if current one was processed *)
                 let peekdata data =
@@ -467,7 +465,7 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
                             if tailsize < insize then tailsize
                             else in_buf_size
                         in
-                        Lwt_io.printf "Bigarray..sub %d %d\n" inpos readsize;
+                        Lwt_io.printf "Bigarray..sub %d %d\n" inpos readsize |> ignore;
                         let data = Bigarray.Array1.sub data inpos readsize in
                         let inpos' = 0 in
                         data, inpos', readsize
@@ -506,20 +504,20 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
                 let outprocessed = Unsigned.Size_t.to_int outprocessedsz in
                 let inprocessedsz = !@ inszptr in
                 let inprocessed = Unsigned.Size_t.to_int inprocessedsz in
-                let status = !@ statusptr in
+                (* let status = !@ statusptr in *)
                 let nextinpos = inpos' + inprocessed in
                 let nextoutpos = outpos + outprocessed in
                 Lwt_io.printf "nextin %d ; nextsz %d ; nexout %d\n"
-                    nextinpos insize'' nextoutpos;
+                    nextinpos insize'' nextoutpos |> ignore;
                 (* TODO: Check for LZMA_STATUS_FINISHED_WITH_MARK! *)
                 match res with
                 | Some SZ_OK -> (
                     Lwt_io.printf "LZMA_DEC: uncompressed 0x%x bytes -> 0x%x bytes\n"
-                        inprocessed outprocessed;
+                        inprocessed outprocessed |> ignore;
                     (* Save the outstream *)
                     if outprocessed > 0 then begin
                         let consumed' = consumed + inprocessed in
-                        let realout = CArray.sub outbuf 0 outprocessed in
+                        let realout = CArray.sub outbuf ~pos:0 ~length:outprocessed in
                         let outstr = carray_to_string realout in
                         Buffer.add_substring outdata outstr outpos outprocessed;
                         (* Continue unpacking *)
@@ -536,10 +534,10 @@ let lzma_decompress_auto_ba (ba:data) ?legacy:(legacy=false) =
                 | Some SZ_ERROR_DATA ->
                     (* Here we still can have some output *)
                         Lwt_io.printf "LZMA_DEC [corrupted]: uncompressed 0x%x bytes -> 0x%x bytes\n"
-                            inprocessed outprocessed;
+                            inprocessed outprocessed |> ignore;
                     (* Save the outstream *)
                     let consumed' = consumed + inprocessed in
-                    let realout = CArray.sub outbuf 0 outprocessed in
+                    let realout = CArray.sub outbuf ~pos:0 ~length:outprocessed in
                     let outstr = carray_to_string realout in
                     Buffer.add_substring outdata outstr outpos outprocessed;
                     (* Now return from the loop *)
