@@ -519,7 +519,7 @@ let lzma_decompress_auto_ba ?legacy:(legacy=false) (ba:data) =
                         let consumed' = consumed + inprocessed in
                         let realout = CArray.sub outbuf ~pos:0 ~length:outprocessed in
                         let outstr = carray_to_string realout in
-                        Buffer.add_substring outdata outstr outpos outprocessed;
+                        Buffer.add_substring outdata outstr ~pos:outpos ~len:outprocessed;
                         (* Continue unpacking *)
                         match (walk nextinpos insize''
                             nextoutpos indata consumed') with
@@ -539,7 +539,7 @@ let lzma_decompress_auto_ba ?legacy:(legacy=false) (ba:data) =
                     let consumed' = consumed + inprocessed in
                     let realout = CArray.sub outbuf ~pos:0 ~length:outprocessed in
                     let outstr = carray_to_string realout in
-                    Buffer.add_substring outdata outstr outpos outprocessed;
+                    Buffer.add_substring outdata outstr ~pos:outpos ~len:outprocessed;
                     (* Now return from the loop *)
                     Ok ({
                             data = Buffer.contents outdata;
@@ -581,6 +581,8 @@ let lzma_decompress_auto_ba ?legacy:(legacy=false) (ba:data) =
                     consumed = consumed;
                 })
         in
-        walk 0 in_buf_size 0 firstblock 0
+        let res = walk 0 in_buf_size 0 firstblock 0 in
+        lzma_deinit statep;
+        res
     | _ -> Or_error.error_string "Decompression: cannot initialize LZMA state"
 
