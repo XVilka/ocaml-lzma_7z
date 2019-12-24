@@ -3,7 +3,7 @@
  (public_name lzma_7z)
  (wrapped false)
  (preprocess (pps ppx_cstruct ppx_deriving.std))
- (libraries core ctypes ctypes.foreign lwt lwt.unix)
+ (libraries core ctypes ctypes.foreign lwt lwt.unix logs logs.fmt logs.lwt)
  (c_library_flags (:standard -Wl,--no-as-needed -lz -lm -pthread))
  (library_flags (-cclib -Wl,-E) (-cclib -Wl,--no-as-needed))
  (self_build_stubs_archive (lzma_7z))

@@ -3,160 +3,16 @@ open Ctypes
 open PosixTypes
 open Foreign
 
-(* Most of the helper functions below are part of lib/util.ml *)
-
-let ba_create size =
-    Bigarray.Array1.create Bigarray.char Bigarray.c_layout size
-
-let ba_create_zeroed size =
-    let ba = ba_create size in
-    Bigarray.Array1.fill ba '\x00';
-    ba
-
+(* Logging setup *)
 (* ----------------------------------------------------------------------------- *)
+let src = Logs.Src.create "lzma"
+module Log = (val Logs_lwt.src_log src : Logs_lwt.LOG)
+(* ----------------------------------------------------------------------------- *)
+
 let unwrap_int opt =
     match opt with
     | Some v -> v
     | None -> 0
-
-(* TODO: More efficient primitives *)
-let int64_BE_of buf int_of_pos =
-    let rec loop buf i n =
-        if i = 8 then n
-        else
-            let b = Int64.of_int (int_of_pos buf i) in
-            let n' = Caml.Int64.logor (Int64.shift_left n 8) b in
-            loop buf (i + 1) n'
-    in
-    loop buf 0 Int64.zero
-
-let int64_of_bigarray_BE ba =
-    let int_of_pos ba offset =
-        Caml.Char.code (Bigarray.Array1.get ba offset)
-    in
-    int64_BE_of ba int_of_pos
-
-let int64_of_bytes_BE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (Bytes.get buf offset)
-    in
-    int64_BE_of buf int_of_pos
-
-let int64_of_string_BE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (String.get buf offset)
-    in
-    int64_BE_of buf int_of_pos
-
-(* ----------------------------------------------------------------------------- *)
-
-let int64_LE_of buf int_of_pos =
-    let rec loop buf i n =
-        if i = 0 then n
-        else
-            let b = Int64.of_int (int_of_pos buf (i - 1)) in
-            let n' = Caml.Int64.logor (Int64.shift_left n 8) b in
-            loop buf (i - 1) n'
-    in
-    loop buf 8 Int64.zero
-
-let int64_of_bigarray_LE ba =
-    let int_of_pos ba offset =
-        Caml.Char.code (Bigarray.Array1.get ba offset)
-    in
-    int64_LE_of ba int_of_pos
-
-let int64_of_bytes_LE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (Bytes.get buf offset)
-    in
-    int64_LE_of buf int_of_pos
-
-let int64_of_string_LE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (String.get buf offset)
-    in
-    int64_LE_of buf int_of_pos
-
-(* ----------------------------------------------------------------------------- *)
-
-let int32_BE_of buf int_of_pos =
-    let rec loop buf i n =
-        if i = 4 then n
-        else
-            let b = Caml.Int32.of_int (int_of_pos buf i) in
-            let n' = Caml.Int32.logor (Int32.shift_left n 8) b in
-            loop buf (i + 1) n'
-    in
-    loop buf 0 Int32.zero
-
-let int32_of_bigarray_BE ba =
-    let int_of_pos ba offset =
-        Caml.Char.code (Bigarray.Array1.get ba offset)
-    in
-    int32_BE_of ba int_of_pos
-
-let int32_of_bytes_BE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (Bytes.get buf offset)
-    in
-    int32_BE_of buf int_of_pos
-
-let int32_of_string_BE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (String.get buf offset)
-    in
-    int32_BE_of buf int_of_pos
-
-(* ----------------------------------------------------------------------------- *)
-
-let int32_LE_of buf int_of_pos =
-    let rec loop buf i n =
-        if i = 0 then n
-        else
-            let b = Caml.Int32.of_int (int_of_pos buf (i - 1)) in
-            let n' = Caml.Int32.logor (Int32.shift_left n 8) b in
-            loop buf (i - 1) n'
-    in
-    loop buf 4 Int32.zero
-
-let int32_of_bigarray_LE ba =
-    let int_of_pos ba offset =
-        Caml.Char.code (Bigarray.Array1.get ba offset)
-    in
-    int32_LE_of ba int_of_pos
-
-let int32_of_bytes_LE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (Bytes.get buf offset)
-    in
-    int32_LE_of buf int_of_pos
-
-let int32_of_string_LE buf =
-    let int_of_pos buf offset =
-        Caml.Char.code (String.get buf offset)
-    in
-    int32_LE_of buf int_of_pos
-
-(* ----------------------------------------------------------------------------- *)
-(* TODO: Wait for the fix in Ctypes library
- * see https://github.com/ocamllabs/ocaml-ctypes/issues/476 *)
-
-let add_gc_link ~from ~to_=
-    let r = ref (Some (Obj.repr to_)) in
-    let finaliser _ = r := None in
-    Caml.Gc.finalise finaliser from
-
-let safe_setf s f v =
-    add_gc_link ~from:s ~to_:v;
-    Ctypes.setf s f v
-
-let safe_getf = Ctypes.getf
-
-let safe_coerce t1 t2 ptr =
-    let newptr = Ctypes.coerce t1 t2 ptr in
-    add_gc_link ~from:newptr ~to_:ptr;
-    newptr
 
 (* TODO: Upstream this to Ctypes library
  * see https://github.com/ocamllabs/ocaml-ctypes/pull/573 *)
@@ -234,12 +90,12 @@ let dec_tempbuf = field clzma_dec "tempBuf" (array 20 uint8_t)
 
 let () = seal clzma_dec
 
-type elzma_finish_mode =
+type lzma_finish_mode =
     | LZMA_FINISH_ANY
     | LZMA_FINISH_END
     [@@deriving enum]
 
-type elzma_status =
+type lzma_status =
     | LZMA_STATUS_NOT_SPECIFIED
     | LZMA_STATUS_FINISHED_WITH_MARK
     | LZMA_STATUS_NOT_FINISHED
@@ -248,22 +104,54 @@ type elzma_status =
     [@@deriving enum]
 
 type lzma_sres =
-    | SZ_OK
-    | SZ_ERROR_DATA
-    | SZ_ERROR_MEM
-    | SZ_ERROR_CRC
-    | SZ_ERROR_UNSUPPORTED
-    | SZ_ERROR_PARAM
-    | SZ_ERROR_INPUT_EOF
-    | SZ_ERROR_OUTPUT_EOF
-    | SZ_ERROR_READ
-    | SZ_ERROR_WRITE
-    | SZ_ERROR_PROGRESS
-    | SZ_ERROR_FAIL
-    | SZ_ERROR_THREAD
+    | SZ_OK [@value 0]
+    | SZ_ERROR_DATA [@value 1]
+    | SZ_ERROR_MEM [@value 2]
+    | SZ_ERROR_CRC [@value 3]
+    | SZ_ERROR_UNSUPPORTED [@value 4]
+    | SZ_ERROR_PARAM [@value 5]
+    | SZ_ERROR_INPUT_EOF [@value 6]
+    | SZ_ERROR_OUTPUT_EOF [@value 7]
+    | SZ_ERROR_READ [@value 8]
+    | SZ_ERROR_WRITE [@value 9]
+    | SZ_ERROR_PROGRESS [@value 10]
+    | SZ_ERROR_FAIL [@value 11]
+    | SZ_ERROR_THREAD [@value 12]
     | SZ_ERROR_ARCHIVE [@value 16]
     | SZ_ERROR_NO_ARCHIVE [@value 17]
     [@@deriving enum]
+
+let lzma_error_to_string = function
+    | SZ_ERROR_DATA ->
+        "Decompression: data error"
+    | SZ_ERROR_MEM ->
+        "Decompression: memory error"
+    | SZ_ERROR_CRC ->
+        "Decompression: wrong CRC"
+    | SZ_ERROR_UNSUPPORTED ->
+        "Decompression: unsupported compression"
+    | SZ_ERROR_PARAM ->
+        "Decompression: param error"
+    | SZ_ERROR_INPUT_EOF ->
+        "Decompression: premature input end"
+    | SZ_ERROR_OUTPUT_EOF ->
+        "Decompression: premature output end"
+    | SZ_ERROR_READ ->
+        "Decompression: read error"
+    | SZ_ERROR_WRITE ->
+        "Decompression: write error"
+    | SZ_ERROR_PROGRESS ->
+        "Decompression: progress wtf?"
+    | SZ_ERROR_FAIL ->
+        "Decompression: fail"
+    | SZ_ERROR_THREAD ->
+        "Decompression: thread error"
+    | SZ_ERROR_ARCHIVE ->
+        "Decompression: archive error"
+    | SZ_ERROR_NO_ARCHIVE ->
+        "Decompression: no archive error"
+    | _ ->
+        "Decompression: unknown error"
 
 (* Some constants from headers *)
 let lzma_props_size = 5
@@ -331,7 +219,7 @@ let lzmadec_free =
 let lzmadec_decode2buf =
     foreign "LzmaDec_DecodeToBuf" (ptr clzma_dec @-> ptr uint8_t @-> ptr size_t @->
                                 ptr uint8_t @-> ptr size_t @->
-                                uint32_t @-> ptr uint32_t @-> (returning int))
+                                uint32_t @-> ptr int32_t @-> (returning int))
 
 
 (* g_Alloc structure from Alloc.h *)
@@ -339,11 +227,6 @@ let lzmadec_galloc =
     foreign_value "g_Alloc" iszalloc
 
 (* -------------------------------------------------------------------------------- *)
-
-type lzma_result = {
-    data: string;
-    consumed: int;
-}
 
 let alloc_clzmadec () =
     let clzmadecp = allocate_n clzma_dec ~count:1 in
@@ -378,11 +261,11 @@ let lzma_parse_headers header =
     }
 
 let dump_headers headers =
-    Lwt_io.printf "headers {\n" |> ignore;
-    Lwt_io.printf "  properties = 0x%x\n" headers.properties |> ignore;
-    Lwt_io.printf "  dict_size = 0x%lx\n" headers.dict_size |> ignore;
-    Lwt_io.printf "  outlen = 0x%Lx\n" headers.outlen |> ignore;
-    Lwt_io.printf "}\n" |> ignore
+    Log.debug (fun mf -> mf "headers {") |> ignore;
+    Log.debug (fun mf -> mf "  properties = 0x%x" headers.properties) |> ignore;
+    Log.debug (fun mf -> mf "  dict_size = 0x%lx" headers.dict_size) |> ignore;
+    Log.debug (fun mf -> mf "  outlen = 0x%Lx" headers.outlen) |> ignore;
+    Log.debug (fun mf -> mf "}") |> ignore
 
 (* Fix up the headers if legacy format is met *)
 (* All modern implementations store size as 8 byte integer (uint64)
@@ -393,13 +276,15 @@ let lzma_read_headers (ba:data) legacy =
         let uif x = unwrap_int (Int32.to_int x) in
         (* Read header in legacy format and convert into the new one *)
         let open Internal_LZMA_Header_Legacy.LE in
-        let legacy_header = Bigarray.Array1.sub ba 0 sizeof_lzma_header_legacy in
-        let legacy_header_cs = Cstruct.of_bigarray legacy_header in
-        let properties = get_lzma_header_legacy_properties legacy_header_cs in
-        let dict_size = get_lzma_header_legacy_dict_size legacy_header_cs in
-        let outlen = uif (get_lzma_header_legacy_outlen legacy_header_cs) in
+        let legacy_header = Cstruct.of_bigarray ~off:0 ~len:sizeof_lzma_header_legacy ba in
+        let properties = get_lzma_header_legacy_properties legacy_header in
+        let dict_size = get_lzma_header_legacy_dict_size legacy_header in
+        let outlen = uif (get_lzma_header_legacy_outlen legacy_header) in
         (* Header should be in the little endian format *)
-        let lzma_header = ba_create_zeroed 13 in (* byte + int + long long *)
+        let lzma_header = Bigarray.Array1.create
+            Bigarray.char Bigarray.c_layout 13 (* byte + int + long long *)
+        in
+        Bigarray.Array1.fill lzma_header '\x00'; (* Fill it with zeroes *)
         let lzma_header_cs = Cstruct.of_bigarray lzma_header in
         (* Form the header *)
         let open Internal_LZMA_Header.LE in (* just using little endian seems enough *)
@@ -425,8 +310,265 @@ let lzma_read_data (ba:data) legacy =
         Bigarray.Array1.sub ba sizeof_lzma_header
             (ba_size - sizeof_lzma_header)
 
+(* Saves the state of the input data *)
+type inbuf_state = {
+    data_size: int;
+    inpos: int;
+    insize: int;
+}
+
+(* Saves the state of the output data *)
+type outbuf_state = {
+    (* These for the C calls *)
+    outbuf: Unsigned.uint8 carray;
+    outbufptr: Unsigned.uint8 ptr;
+    outbufsize: int;
+    outpos: int;
+    (* And this one is the OCaml level buffer *)
+    outdata: Buffer.t;
+}
+
+type decompress_block_state = {
+    internal_state: clzma_dec structure ptr;
+    blocknum: int;
+    inbuf_state: inbuf_state;
+    outbuf_state: outbuf_state;
+}
+
+(* Returns tuple (data, inpos, insize) *)
+let peekdata state data =
+    let datasize = Bigarray.Array1.dim data in
+    (* insize can be less than in_buf_size at the end *)
+    let tailsize = state.data_size - state.inpos in
+    let readsize =
+        if tailsize < state.insize then tailsize
+        else in_buf_size
+    in
+    Log.debug (fun mf -> mf "PEEK: [0x%x] @@ 0x%x (tail is 0x%x, total is 0x%x)"
+        readsize state.inpos tailsize datasize) |> ignore;
+    let peek = Bigarray.Array1.sub data state.inpos readsize in
+    peek, state.inpos, readsize
+
+type lzma_decompression_state = FINISH_OK | MORE_DATA_OK | DATA_ERROR
+
+type lzma_internal_result = {
+    state: lzma_decompression_state;
+    data: string;
+    consumed: int;
+}
+
+let rec decompress_block headers state data consumed =
+    Log.debug (fun mf -> mf "--------------------------------------------------------") |> ignore;
+    Log.debug (fun mf -> mf " -- [%d] block: IN[...0x%x...][0x%x] -> OUT[...0x%x...]"
+        state.blocknum state.inbuf_state.inpos state.inbuf_state.insize
+        state.outbuf_state.outpos) |> ignore;
+    if state.inbuf_state.inpos < (state.inbuf_state.data_size - 8) then begin
+        (* Read next block if current one was processed *)
+        let (indata, inpos, insize) = peekdata state.inbuf_state data in
+        (* Check if size is not -1 and processed data is bigger *)
+        (* NOTE: The real data size can be less than data_size or bigger! *)
+        let (finishmode, outprocessed) =
+            (* If outproc is 0 then restart? *)
+            let outproc = Int64.of_int state.outbuf_state.outbufsize in
+            if (not Int64.(headers.outlen = -1L)) && Int64.(outproc > headers.outlen) then
+                LZMA_FINISH_END, headers.outlen
+            else
+                LZMA_FINISH_ANY, outproc
+        in
+        let finishmode' = Unsigned.UInt32.of_int
+            (lzma_finish_mode_to_enum finishmode) in
+        let insz = Unsigned.Size_t.of_int insize in
+        let inszptr = allocate size_t insz in
+        let outprocessedsz = Unsigned.Size_t.of_int64 outprocessed in
+        let outszptr = allocate size_t outprocessedsz in
+        let inp = Ctypes.bigarray_start array1 indata in
+        let inptr = coerce (ptr char) (ptr uint8_t) inp in
+        let statusptr = allocate int32_t Int32.zero in
+        Log.debug (fun mf -> mf "outprocessed = 0x%Lx" outprocessed) |> ignore;
+
+        (* Then call LzmaDec_DecodeToBuf *)
+        let rawres = lzmadec_decode2buf state.internal_state
+                                    state.outbuf_state.outbufptr outszptr (* dest *)
+                                    inptr inszptr (* src *)
+                                    finishmode' statusptr in
+        let res = lzma_sres_of_enum rawres in
+        let outprocessedsz = !@ outszptr in
+        let outprocessed = Unsigned.Size_t.to_int outprocessedsz in
+        let inprocessedsz = !@ inszptr in
+        let inprocessed = Unsigned.Size_t.to_int inprocessedsz in
+        Log.debug (fun mf -> mf "inprocessed = 0x%x, outprocessed = 0x%x"
+            inprocessed outprocessed) |> ignore;
+        let status = lzma_status_of_enum (unwrap_int (Int32.to_int (!@ statusptr))) in
+        match status with
+        | Some LZMA_STATUS_NEEDS_MORE_INPUT | Some LZMA_STATUS_NOT_FINISHED -> (
+            let nextinpos = inpos + inprocessed in
+            let nextoutpos = state.outbuf_state.outpos + outprocessed in
+            (* Reset the outbuf pointer if the block was unpacked Successfully *)
+            Log.debug (fun mf -> mf "More input - nextin 0x%x ; nextsz 0x%x ; nextout 0x%x"
+                nextinpos insize nextoutpos) |> ignore;
+            match res with
+            | Some SZ_OK -> (
+                Log.debug (fun mf -> mf "LZMA_DEC: uncompressed 0x%x bytes -> 0x%x bytes"
+                    inprocessed outprocessed) |> ignore;
+                (* Save the outstream *)
+                if outprocessed > 0 then begin
+                    let consumed' = consumed + inprocessed in
+                    let realout = CArray.sub state.outbuf_state.outbuf ~pos:0 ~length:outprocessed in
+                    let outstr = carray_to_string realout in
+                    Buffer.add_substring state.outbuf_state.outdata outstr ~pos:0 ~len:outprocessed;
+                    (* Continue unpacking *)
+                    let newstate = {state with
+                        blocknum = state.blocknum + 1;
+                        inbuf_state = {state.inbuf_state with
+                            inpos = nextinpos;
+                            insize;
+                        };
+                        outbuf_state = {state.outbuf_state with
+                            outpos = nextoutpos;
+                        };
+                    } in
+                    match (decompress_block headers newstate data consumed') with
+                    | Ok someresult -> Ok someresult
+                    | Error e -> Error e
+                end else
+                    Ok ({
+                        state = MORE_DATA_OK;
+                        data = Buffer.contents state.outbuf_state.outdata;
+                        consumed;
+                    })
+            )
+            | Some SZ_ERROR_DATA ->
+                (* Here we still can have some output *)
+                Log.debug (fun mf -> mf "LZMA_DEC [corrupted]: uncompressed 0x%x bytes -> 0x%x bytes"
+                        inprocessed outprocessed) |> ignore;
+                (* Save the outstream only if processed something *)
+                if inprocessed > 0 then begin
+                    let consumed' = consumed + inprocessed in
+                    let realout = CArray.sub state.outbuf_state.outbuf ~pos:0 ~length:outprocessed in
+                    let outstr = carray_to_string realout in
+                    Buffer.add_substring state.outbuf_state.outdata outstr ~pos:0 ~len:outprocessed;
+                    (* Now return from the loop *)
+                    Ok ({
+                        state = DATA_ERROR;
+                        data = Buffer.contents state.outbuf_state.outdata;
+                        consumed = consumed';
+                    })
+                end else
+                    Or_error.error_string "Decompression: corrupted data - processed nothing"
+            | Some lzma_error ->
+                Or_error.error_string (lzma_error_to_string lzma_error)
+            | _ ->
+                Or_error.error_string "Decompression: unknown error"
+        )
+        | Some LZMA_STATUS_FINISHED_WITH_MARK
+        | Some LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK -> (
+            (match status with
+            | Some LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK ->
+                Log.debug (fun mf -> mf "LZMA_DEC: Stream finished without the mark") |> ignore
+            | _ ->
+                Log.debug (fun mf -> mf "LZMA_DEC: Stream finished with the end mark") |> ignore);
+            match res with
+            | Some SZ_OK -> (
+                Log.debug (fun mf -> mf "LZMA_DEC (FINISH): uncompressed 0x%x bytes -> 0x%x bytes"
+                    inprocessed outprocessed) |> ignore;
+                (* Save the outstream *)
+                if outprocessed > 0 then begin
+                    let consumed' = consumed + inprocessed in
+                    let realout = CArray.sub state.outbuf_state.outbuf ~pos:0 ~length:outprocessed in
+                    let outstr = carray_to_string realout in
+                    Buffer.add_substring state.outbuf_state.outdata outstr ~pos:0 ~len:outprocessed;
+                    Ok ({
+                        state = FINISH_OK;
+                        data = Buffer.contents state.outbuf_state.outdata;
+                        consumed = consumed';
+                    })
+                end else
+                    Ok ({
+                        state = FINISH_OK;
+                        data = Buffer.contents state.outbuf_state.outdata;
+                        consumed;
+                    })
+            )
+            | Some SZ_ERROR_DATA ->
+                (* Here we still can have some output *)
+                Log.debug (fun mf -> mf "LZMA_DEC [corrupted]: uncompressed 0x%x bytes -> 0x%x bytes"
+                        inprocessed outprocessed) |> ignore;
+                (* Save the outstream only if processed something *)
+                if inprocessed > 0 then begin
+                    let consumed' = consumed + inprocessed in
+                    let realout = CArray.sub state.outbuf_state.outbuf ~pos:0 ~length:outprocessed in
+                    let outstr = carray_to_string realout in
+                    Buffer.add_substring state.outbuf_state.outdata outstr ~pos:0 ~len:outprocessed;
+                    (* Now return from the loop *)
+                    Ok ({
+                        state = DATA_ERROR;
+                        data = Buffer.contents state.outbuf_state.outdata;
+                        consumed = consumed';
+                    })
+                end else
+                    Or_error.error_string "Decompression: corrupted data - processed nothing"
+            | Some lzma_error ->
+                Or_error.error_string (lzma_error_to_string lzma_error)
+            | _ ->
+                Or_error.error_string "Decompression: unknown error"
+        )
+        | _ -> (
+            (match res with
+            | Some SZ_OK ->
+                Log.debug (fun mf -> mf "LZMA UNSPECIFIED STATUS, SZ_OK") |> ignore
+            | Some lzma_error ->
+                let lzma_error_str = lzma_error_to_string lzma_error in
+                Log.debug (fun mf -> mf "LZMA UNSPECIFIED STATUS, Error (%d): %s"
+                   rawres lzma_error_str) |> ignore
+            | None -> ());
+            Or_error.error_string "Decompression: unknown status"
+        )
+
+    end else
+        (* Unpacked data? *)
+        Ok ({
+            state = FINISH_OK;
+            data = Buffer.contents state.outbuf_state.outdata;
+            consumed = consumed;
+        })
+
+type lzma_result = {
+    data: string;
+    consumed: int;
+}
+
+let rec decompress_blocks headers state data consumed =
+    match decompress_block headers state data consumed with
+    | Ok result -> (
+        (* Continue to unpack *)
+        let newstate = {state with
+            blocknum = state.blocknum + 1;
+            inbuf_state = {state.inbuf_state with
+                inpos = state.inbuf_state.inpos + result.consumed;
+            };
+            outbuf_state = state.outbuf_state;
+        } in
+        let consumed = consumed + result.consumed in
+        match result.state with
+        | FINISH_OK | MORE_DATA_OK ->
+            if newstate.inbuf_state.inpos < (newstate.inbuf_state.data_size - 8) then begin
+               Log.debug (fun mf -> mf "continuing to unpack @ 0x%x" newstate.inbuf_state.inpos) |> ignore;
+               decompress_blocks headers newstate data consumed
+            end else
+                Ok ({
+                    data = result.data;
+                    consumed = result.consumed;
+                })
+        | DATA_ERROR ->
+            Ok ({
+                data = result.data;
+                consumed = result.consumed;
+            })
+    )
+    | Error e -> Error e
+
+
 (* TODO: Add also bytes and string functions *)
-(* It is utter crap, refactor this! *)
 (* Returns the lzma_result - buffer and bytes consumed *)
 let lzma_decompress_auto_ba ?legacy:(legacy=false) (ba:data) =
     (* Prepare the header first *)
@@ -436,152 +578,34 @@ let lzma_decompress_auto_ba ?legacy:(legacy=false) (ba:data) =
     (* Read the uncompressed data size *)
     let data = lzma_read_data ba legacy in
     let data_size = Bigarray.Array1.dim data in
+    Log.debug (fun mf -> mf "LZMA: input data size 0x%x" data_size) |> ignore;
     let maybe_state = lzma_init header in
     match maybe_state with
     | Ok statep ->
         lzmadec_init statep;
         (* Loop over the buf, extract block by block *)
-        let outbuf = CArray.make uint8_t out_buf_size in
+        let outbufsize = out_buf_size * 4 in
+        let outbuf = CArray.make uint8_t outbufsize in
         let outbufptr = CArray.start outbuf in
         let outdata = Buffer.create 16 in
-        Lwt_io.printf "first block [%d|%d]\n" in_buf_size data_size |> ignore;
-        let firstblock =
-            if data_size >= in_buf_size
-            then Bigarray.Array1.sub data 0 in_buf_size
-            else Bigarray.Array1.sub data 0 data_size
-        in
-        Lwt_io.printf "first block size %d\n" (Bigarray.Array1.dim firstblock) |> ignore;
-        (* Stupid copy of LzmaUtil.c Decode2 *)
-        let rec walk inpos insize outpos block consumed =
-            Lwt_io.printf "inpos = 0x%x insize = 0x%x datasize = 0x%x outpos = 0x%x\n"
-                inpos insize data_size outpos |> ignore;
-            if inpos < (data_size - 8) then begin
-                (* Read next block if current one was processed *)
-                let peekdata data =
-                    if inpos = insize then begin
-                        (* insize can be less than in_buf_size at the end *)
-                        let tailsize = data_size - inpos in
-                        let readsize =
-                            if tailsize < insize then tailsize
-                            else in_buf_size
-                        in
-                        Lwt_io.printf "Bigarray..sub %d %d\n" inpos readsize |> ignore;
-                        let data = Bigarray.Array1.sub data inpos readsize in
-                        let inpos' = 0 in
-                        data, inpos', readsize
-                    end else begin
-                        let data = block in
-                        let inpos' = inpos in
-                        data, inpos', insize
-                    end
-                in
-                (* Read next block if current one was processed *)
-                let (indata, inpos', insize') = peekdata data in
-                let insize'' = insize' - inpos' in
-                (* Check if size is not -1 and processed data is bigger *)
-                (* NOTE: The real data size can be less than data_size or bigger! *)
-                let (finishmode, outprocessed) =
-                    let outproc = Int64.of_int (out_buf_size - outpos) in
-                    if not (headers.outlen = -1L) && outproc > headers.outlen then
-                    LZMA_FINISH_END, headers.outlen
-                    else LZMA_FINISH_ANY, Int64.of_int (out_buf_size - outpos)
-                in
-                let finishmode' = Unsigned.UInt32.of_int
-                    (elzma_finish_mode_to_enum finishmode) in
-                let insz = Unsigned.Size_t.of_int insize'' in
-                let inszptr = allocate size_t insz in
-                let outprocessedsz = Unsigned.Size_t.of_int64 outprocessed in
-                let outszptr = allocate size_t outprocessedsz in
-                let inp = Ctypes.bigarray_start array1 indata in
-                let inptr = coerce (ptr char) (ptr uint8_t) inp in
-                let statusptr = allocate uint32_t Unsigned.UInt32.zero in
-                (* Then call LzmaDec_DecodeToBuf *)
-                let res = lzma_sres_of_enum (lzmadec_decode2buf statep
-                                            outbufptr outszptr (* dest *)
-                                            inptr inszptr (* src *)
-                                            finishmode' statusptr) in
-                let outprocessedsz = !@ outszptr in
-                let outprocessed = Unsigned.Size_t.to_int outprocessedsz in
-                let inprocessedsz = !@ inszptr in
-                let inprocessed = Unsigned.Size_t.to_int inprocessedsz in
-                (* let status = !@ statusptr in *)
-                let nextinpos = inpos' + inprocessed in
-                let nextoutpos = outpos + outprocessed in
-                Lwt_io.printf "nextin %d ; nextsz %d ; nexout %d\n"
-                    nextinpos insize'' nextoutpos |> ignore;
-                (* TODO: Check for LZMA_STATUS_FINISHED_WITH_MARK! *)
-                match res with
-                | Some SZ_OK -> (
-                    Lwt_io.printf "LZMA_DEC: uncompressed 0x%x bytes -> 0x%x bytes\n"
-                        inprocessed outprocessed |> ignore;
-                    (* Save the outstream *)
-                    if outprocessed > 0 then begin
-                        let consumed' = consumed + inprocessed in
-                        let realout = CArray.sub outbuf ~pos:0 ~length:outprocessed in
-                        let outstr = carray_to_string realout in
-                        Buffer.add_substring outdata outstr ~pos:outpos ~len:outprocessed;
-                        (* Continue unpacking *)
-                        match (walk nextinpos insize''
-                            nextoutpos indata consumed') with
-                        | Ok someresult -> Ok someresult
-                        | Error e -> Error e
-                    end else
-                        Ok ({
-                                data = Buffer.contents outdata;
-                                consumed = consumed;
-                        })
-                )
-                | Some SZ_ERROR_DATA ->
-                    (* Here we still can have some output *)
-                        Lwt_io.printf "LZMA_DEC [corrupted]: uncompressed 0x%x bytes -> 0x%x bytes\n"
-                            inprocessed outprocessed |> ignore;
-                    (* Save the outstream *)
-                    let consumed' = consumed + inprocessed in
-                    let realout = CArray.sub outbuf ~pos:0 ~length:outprocessed in
-                    let outstr = carray_to_string realout in
-                    Buffer.add_substring outdata outstr ~pos:outpos ~len:outprocessed;
-                    (* Now return from the loop *)
-                    Ok ({
-                            data = Buffer.contents outdata;
-                            consumed = consumed';
-                        })
-                | Some SZ_ERROR_MEM ->
-                    Or_error.error_string "Decompression: memory error"
-                | Some SZ_ERROR_CRC ->
-                    Or_error.error_string "Decompression: wrong CRC"
-                | Some SZ_ERROR_UNSUPPORTED ->
-                    Or_error.error_string "Decompression: unsupported compression"
-                | Some SZ_ERROR_PARAM ->
-                    Or_error.error_string "Decompression: param error"
-                | Some SZ_ERROR_INPUT_EOF ->
-                    Or_error.error_string "Decompression: premature input end"
-                | Some SZ_ERROR_OUTPUT_EOF ->
-                    Or_error.error_string "Decompression: premature output end"
-                | Some SZ_ERROR_READ ->
-                    Or_error.error_string "Decompression: read error"
-                | Some SZ_ERROR_WRITE ->
-                    Or_error.error_string "Decompression: write error"
-                | Some SZ_ERROR_PROGRESS ->
-                    Or_error.error_string "Decompression: progress wtf?"
-                | Some SZ_ERROR_FAIL ->
-                    Or_error.error_string "Decompression: fail"
-                | Some SZ_ERROR_THREAD ->
-                    Or_error.error_string "Decompression: thread error"
-                | Some SZ_ERROR_ARCHIVE ->
-                    Or_error.error_string "Decompression: archive error"
-                | Some SZ_ERROR_NO_ARCHIVE ->
-                    Or_error.error_string "Decompression: no archive error"
-                | _ ->
-                    Or_error.error_string "Decompression: unknown error"
-
-            end else
-                (* Unpacked data? *)
-                Ok ({
-                    data = Buffer.contents outdata;
-                    consumed = consumed;
-                })
-        in
-        let res = walk 0 in_buf_size 0 firstblock 0 in
+        (* The initial state of the block-level decompression *)
+        let initial_state = {
+            internal_state = statep;
+            blocknum = 0;
+            inbuf_state = {
+                data_size;
+                inpos = 0;
+                insize = in_buf_size;
+            };
+            outbuf_state = {
+                outbuf;
+                outbufptr;
+                outbufsize;
+                outpos = 0;
+                outdata;
+            }
+        } in
+        let res = decompress_blocks headers initial_state data 0 in
         lzma_deinit statep;
         res
     | _ -> Or_error.error_string "Decompression: cannot initialize LZMA state"
