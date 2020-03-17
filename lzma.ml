@@ -550,8 +550,10 @@ let rec decompress_blocks headers state data consumed =
         } in
         let consumed = consumed + result.consumed in
         match result.state with
-        | FINISH_OK | MORE_DATA_OK ->
-            if newstate.inbuf_state.inpos < (newstate.inbuf_state.data_size - 8) then begin
+        | MORE_DATA_OK ->
+            (* Continue to unpack only if the input position changed *)
+            if (newstate.inbuf_state.inpos > state.inbuf_state.inpos) &&
+                    (newstate.inbuf_state.inpos < (newstate.inbuf_state.data_size - 8)) then begin
                Log.debug (fun mf -> mf "continuing to unpack @ 0x%x" newstate.inbuf_state.inpos) |> ignore;
                decompress_blocks headers newstate data consumed
             end else
@@ -559,6 +561,7 @@ let rec decompress_blocks headers state data consumed =
                     data = result.data;
                     consumed = result.consumed;
                 })
+        | FINISH_OK
         | DATA_ERROR ->
             Ok ({
                 data = result.data;

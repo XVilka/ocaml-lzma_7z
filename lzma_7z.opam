@@ -1,0 +1,28 @@
+opam-version: "2.0"
+name: "lzma_7z"
+version: "0.1"
+maintainer: "Anton Kochkov <anton.kochkov@gmail.com>"
+authors: [ "Anton Kochkov <anton.kochkov@gmail.com>" ]
+license: "Public-Domain"
+homepage: "https://github.com/XVilka/ocaml-lzma_7z"
+dev-repo: "git+https://github.com/XVilka/ocaml-lzma_7z.git"
+bug-reports: "https://github.com/XVilka/ocaml-lzma_7z/issues"
+build: [
+	["dune" "subst"] {pinned}
+	["dune" "build" "-p" name "-j" jobs]
+]
+depends: [
+  "ocaml" {>= "4.08.1"}
+  "dune" {>= "1.2"}
+  "core" {>= "0.13"}
+  "lwt"
+  "fmt"
+  "logs"
+  "ctypes"
+  "ctypes-foreign"
+]
+synopsis: "OCaml Ctypes wrapper for 7Zip SDK library"
+description: """
+Provides the basic interface to the LZMA decompression routines
+without the external dependencies and using the vanilla 7Zip SDK
+"""
