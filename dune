@@ -6,22 +6,17 @@
  (libraries core ctypes ctypes.foreign lwt lwt.unix logs logs.fmt logs.lwt)
  (c_library_flags (:standard -Wl,--no-as-needed -lz -lm -pthread))
  (library_flags (-cclib -Wl,-E) (-cclib -Wl,--no-as-needed))
- (self_build_stubs_archive (lzma_7z))
+ (foreign_archives lzma_7z)
  )
-(ignored_subdirs (7zip))
+(data_only_dirs 7zip)
 (rule
   (deps (source_tree 7zip))
-  (targets liblzma_7z.a liblzma_7z.so)
+  (targets liblzma_7z.a dlllzma_7z.so)
   (action (progn
 	  (chdir 7zip (run make clean))
 	  (chdir 7zip (run make liblzma_7z.a))
 	  (chdir 7zip (run make liblzma_7z.so))
-  )))
-(rule
-  (deps (source_tree 7zip))
-  (targets liblzma_7z_stubs.a dlllzma_7z_stubs.so)
-  (action (progn
-	  (copy 7zip/liblzma_7z.a liblzma_7z_stubs.a)
-	  (copy 7zip/liblzma_7z.so dlllzma_7z_stubs.so)
+	  (copy 7zip/liblzma_7z.a liblzma_7z.a)
+	  (copy 7zip/liblzma_7z.so dlllzma_7z.so)
 	  (chdir 7zip (run make clean))
   )))
