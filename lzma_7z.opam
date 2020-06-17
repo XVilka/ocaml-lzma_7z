@@ -1,6 +1,6 @@
 opam-version: "2.0"
 name: "lzma_7z"
-version: "0.1"
+version: "0.2"
 maintainer: "Anton Kochkov <anton.kochkov@gmail.com>"
 authors: [ "Anton Kochkov <anton.kochkov@gmail.com>" ]
 license: "Public-Domain"
@@ -13,7 +13,7 @@ build: [
 ]
 depends: [
   "ocaml" {>= "4.08.1"}
-  "dune" {>= "1.2"}
+  "dune" {>= "2.6"}
   "core" {>= "0.13"}
   "lwt"
   "fmt"

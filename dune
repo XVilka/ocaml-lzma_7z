@@ -12,11 +12,11 @@
 (rule
   (deps (source_tree 7zip))
   (targets liblzma_7z.a dlllzma_7z.so)
-  (action (progn
+  (action (no-infer (progn
 	  (chdir 7zip (run make clean))
 	  (chdir 7zip (run make liblzma_7z.a))
 	  (chdir 7zip (run make liblzma_7z.so))
 	  (copy 7zip/liblzma_7z.a liblzma_7z.a)
 	  (copy 7zip/liblzma_7z.so dlllzma_7z.so)
 	  (chdir 7zip (run make clean))
-  )))
+  ))))
